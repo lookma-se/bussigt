@@ -38,7 +38,12 @@
     }
     .info-panel h1 { font-size: 1.05rem; font-weight: 700; color: #fff; margin-bottom: 2px; }
     .info-panel .sub { font-size: 0.72rem; color: #888; margin-bottom: 10px; }
-    .line-status { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 0.82rem; }
+    .line-status { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 0.82rem; transition: none; }
+    .line-statuses-list.collapsed .line-status:nth-child(n+4) { display: none; }
+    .line-toggle { background: none; border: none; color: #60a5fa; font-size: 0.75rem; cursor: pointer; padding: 4px 0; font-weight: 600; }
+    .line-toggle:hover { color: #93bbfd; }
+    body.light .line-toggle { color: #3b82f6; }
+    body.light .line-toggle:hover { color: #2563eb; }
     .line-badge {
       display: inline-flex; align-items: center; justify-content: center;
       min-width: 38px; height: 22px; border-radius: 4px;
@@ -68,6 +73,42 @@
     .action-btn.active { color: #60a5fa; }
     #locate-btn { bottom: calc(16px + env(safe-area-inset-bottom, 0px)); right: 16px; }
     #settings-btn { bottom: calc(16px + env(safe-area-inset-bottom, 0px)); left: 16px; }
+
+    /* Google-style zoom buttons */
+    .zoom-btns {
+      position: absolute; z-index: 1000;
+      bottom: calc(70px + env(safe-area-inset-bottom, 0px)); right: 16px;
+      display: flex; flex-direction: column; gap: 1px;
+      border-radius: 10px; overflow: hidden;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+    }
+    .zoom-btn {
+      width: 44px; height: 44px; border: none;
+      background: rgba(20, 20, 40, 0.85); backdrop-filter: blur(12px);
+      color: #ccc; font-size: 1.4rem; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.2s, color 0.2s;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .zoom-btn:last-child { border-bottom: none; }
+    .zoom-btn:hover { background: rgba(40,40,70,0.95); color: #fff; }
+    .zoom-btn:active { background: rgba(60,60,100,0.95); }
+
+    /* Light mode */
+    body.light { background: #f5f5f5; }
+    body.light .info-panel { background: rgba(255,255,255,0.92); border-color: rgba(0,0,0,0.08); color: #333; }
+    body.light .info-panel h1 { color: #111; }
+    body.light .info-panel .sub { color: #666; }
+    body.light .line-count { color: #333; }
+    body.light .update-time { color: #999; }
+    body.light .source-info { color: #999; border-color: rgba(0,0,0,0.06); }
+    body.light .source-info a { color: #888; }
+    body.light .action-btn, body.light .zoom-btn { background: rgba(255,255,255,0.9); color: #333; border-color: rgba(0,0,0,0.1); box-shadow: 0 2px 12px rgba(0,0,0,0.15); }
+    body.light .action-btn:hover, body.light .zoom-btn:hover { background: #fff; color: #111; }
+    body.light .action-btn.active { color: #3b82f6; }
+    body.light .leaflet-control-attribution { background: rgba(255,255,255,0.8) !important; color: #999 !important; }
+    body.light .leaflet-popup-content-wrapper { background: rgba(255,255,255,0.95) !important; color: #333 !important; border-color: rgba(0,0,0,0.1) !important; box-shadow: 0 4px 20px rgba(0,0,0,0.15) !important; }
+    body.light .leaflet-popup-tip { background: rgba(255,255,255,0.95) !important; }
 
     /* Onboarding overlay */
     .overlay {
@@ -142,32 +183,74 @@
     .leaflet-popup-close-button { color: #888 !important; }
     .leaflet-control-attribution { background: rgba(20, 20, 40, 0.7) !important; color: #666 !important; font-size: 0.6rem !important; padding-right: env(safe-area-inset-right, 4px) !important; padding-bottom: env(safe-area-inset-bottom, 0px) !important; }
     .leaflet-control-attribution a { color: #888 !important; }
-    .leaflet-control-zoom a { background: rgba(20, 20, 40, 0.85) !important; color: #ccc !important; border-color: rgba(255,255,255,0.08) !important; }
-    .leaflet-control-zoom a:hover { background: rgba(40,40,70,0.95) !important; color: #fff !important; }
+    .leaflet-control-zoom { display: none !important; }
+
+    /* Light mode: overlay + onboarding */
+    body.light .overlay { background: rgba(240, 240, 245, 0.92); }
+    body.light .overlay-card { background: rgba(255,255,255,0.97); border-color: rgba(0,0,0,0.08); color: #333; box-shadow: 0 8px 40px rgba(0,0,0,0.15); }
+    body.light .overlay-card h2 { color: #111; }
+    body.light .overlay-card .tagline { color: #888; }
+    body.light .overlay-card label { color: #555; }
+    body.light .stop-search { background: rgba(245,245,250,0.9); border-color: rgba(0,0,0,0.1); color: #333; }
+    body.light .stop-search:focus { border-color: rgba(59,130,246,0.5); }
+    body.light .stop-search::placeholder { color: #999; }
+    body.light .stop-list { border-color: rgba(0,0,0,0.06); }
+    body.light .stop-item { color: #444; border-color: rgba(0,0,0,0.04); }
+    body.light .stop-item:hover { background: rgba(59,130,246,0.08); }
+    body.light .stop-item.selected { background: rgba(59,130,246,0.12); color: #3b82f6; }
+    body.light .line-check { background: rgba(245,245,250,0.8); border-color: rgba(0,0,0,0.08); color: #555; }
+    body.light .line-check:hover { border-color: rgba(0,0,0,0.15); }
+    body.light .line-check.checked { border-color: rgba(59,130,246,0.4); background: rgba(59,130,246,0.08); color: #3b82f6; }
+    body.light .lines-loading { color: #999; }
+    body.light .save-btn { background: linear-gradient(135deg, #3b82f6, #2563eb); }
+    body.light #add-line-input { background: rgba(245,245,250,0.9); border-color: rgba(0,0,0,0.1); color: #333; }
+    body.light #add-line-btn { background: rgba(59,130,246,0.08); border-color: rgba(59,130,246,0.3); color: #3b82f6; }
+
+    /* A2HS prompt */
+    .a2hs-card { text-align: center; }
+    .a2hs-card h2 { margin-bottom: 8px; }
+    .a2hs-card .a2hs-desc { font-size: 0.85rem; color: #aaa; margin-bottom: 20px; line-height: 1.5; }
+    body.light .a2hs-card .a2hs-desc { color: #666; }
+    .a2hs-steps { text-align: left; margin-bottom: 20px; }
+    .a2hs-step { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 14px; font-size: 0.85rem; color: #ccc; line-height: 1.5; }
+    body.light .a2hs-step { color: #444; }
+    .a2hs-step .step-num { flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%; background: rgba(59,130,246,0.2); color: #60a5fa; font-weight: 700; font-size: 0.8rem; display: flex; align-items: center; justify-content: center; }
+    body.light .a2hs-step .step-num { background: rgba(59,130,246,0.1); color: #3b82f6; }
+    .a2hs-icon { font-size: 1.1rem; vertical-align: middle; }
+    .a2hs-dismiss { width: 100%; padding: 12px; border: none; border-radius: 10px; background: linear-gradient(135deg, #3b82f6, #2563eb); color: #fff; font-size: 0.95rem; font-weight: 700; cursor: pointer; transition: transform 0.1s; }
+    .a2hs-dismiss:active { transform: scale(0.98); }
+    .a2hs-skip { display: block; margin-top: 10px; background: none; border: none; color: #888; font-size: 0.8rem; cursor: pointer; width: 100%; text-align: center; }
+    .a2hs-skip:hover { color: #aaa; }
+    body.light .a2hs-skip { color: #999; }
 
     .stop-list::-webkit-scrollbar, .overlay-card::-webkit-scrollbar { width: 4px; }
     .stop-list::-webkit-scrollbar-track, .overlay-card::-webkit-scrollbar-track { background: transparent; }
     .stop-list::-webkit-scrollbar-thumb, .overlay-card::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+    body.light .stop-list::-webkit-scrollbar-thumb, body.light .overlay-card::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.1); }
   </style>
 </head>
 <body>
 
-<div id="loading" style="position:fixed;inset:0;z-index:3000;background:#1a1a2e;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;color:#ccc;font-family:system-ui">
-  <div style="font-size:3rem">🚌</div>
-  <div style="font-size:1rem;opacity:0.7">Laddar Bussigt!...</div>
-</div>
+<!-- Loading handled by onboarding overlay -->
 <div id="map"></div>
 
 <div class="info-panel">
   <h1 id="app-title">🚌 Bussigt!</h1>
   <div class="sub" id="app-sub">Realtidsbussar</div>
-  <div id="line-statuses"><div class="no-buses">Välj hållplats via ⚙️</div></div>
+  <div id="line-statuses-wrap">
+    <div class="line-statuses-list collapsed" id="line-statuses"><div class="no-buses">Välj hållplats via ⚙️</div></div>
+    <button class="line-toggle" id="line-toggle" style="display:none"></button>
+  </div>
   <div class="update-time" id="update-time"></div>
   <div class="source-info">Data: <a href="https://www.trafiklab.se" target="_blank">Trafiklab</a> GTFS Regional · <a href="https://lookma.se">Lookma</a></div>
 </div>
 
 <button class="action-btn" id="settings-btn" title="Inställningar">⚙️</button>
 <button class="action-btn" id="locate-btn" title="Visa min position">◉</button>
+<div class="zoom-btns">
+  <button class="zoom-btn" id="zoom-in" title="Zooma in">+</button>
+  <button class="zoom-btn" id="zoom-out" title="Zooma ut">−</button>
+</div>
 
 <!-- Onboarding overlay — starts visible, JS hides it if config exists -->
 <div class="overlay visible" id="onboarding">
@@ -191,7 +274,26 @@
       <div style="font-size:0.68rem;color:#666;margin-top:4px">Linjer som inte trafikerar just nu kan läggas till manuellt</div>
     </div>
 
+    <div class="section">
+      <label>🎨 Utseende</label>
+      <div style="display:flex;gap:8px;margin-top:6px">
+        <button class="theme-btn" id="theme-dark" style="flex:1;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.15);background:#1a1a2e;color:#ccc;font-size:0.82rem;font-weight:600;cursor:pointer;transition:all 0.2s">🌙 Mörkt</button>
+        <button class="theme-btn" id="theme-light" style="flex:1;padding:10px;border-radius:8px;border:1px solid rgba(0,0,0,0.1);background:#f0f0f0;color:#333;font-size:0.82rem;font-weight:600;cursor:pointer;transition:all 0.2s">☀️ Ljust</button>
+      </div>
+    </div>
+
     <button class="save-btn" id="save-btn" disabled>Spara & starta</button>
+  </div>
+</div>
+
+<!-- Add to Home Screen prompt -->
+<div class="overlay" id="a2hs-overlay">
+  <div class="overlay-card a2hs-card">
+    <h2>📱 Lägg till på hemskärmen</h2>
+    <p class="a2hs-desc">Bussigt! fungerar bäst som app — fullskärm, snabbstart och inga adressfält i vägen.</p>
+    <div class="a2hs-steps" id="a2hs-steps"></div>
+    <button class="a2hs-dismiss" id="a2hs-done">Okej, tack!</button>
+    <button class="a2hs-skip" id="a2hs-skip">Hoppa över</button>
   </div>
 </div>
 
@@ -199,11 +301,7 @@
 (function() {
   'use strict';
 
-  // Fallback: if app doesn't init within 10s, show error
-  var _initTimeout = setTimeout(function() {
-    var el = document.getElementById('loading');
-    if (el) el.innerHTML = '<div style="font-size:3rem">🚌</div><div style="color:#e53e3e">Kunde inte ladda appen.<br>Prova ladda om sidan.</div>';
-  }, 10000);
+  var _initTimeout = 0; // kept for clearTimeout compatibility
 
   // ---- Line colors (known + generated palette for unknowns) ----
   const LINE_COLORS = {
@@ -252,7 +350,7 @@
   }
 
   // ---- Map setup ----
-  const map = L.map('map', { center: DEFAULT_CENTER, zoom: DEFAULT_ZOOM, zoomControl: true });
+  const map = L.map('map', { center: DEFAULT_CENTER, zoom: DEFAULT_ZOOM, zoomControl: false });
 
   // ---- Persist map view (zoom + center) ----
   function saveMapView() {
@@ -268,10 +366,7 @@
   }
   map.on('moveend', saveMapView);
   map.on('zoomend', saveMapView);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
-    subdomains: 'abcd', maxZoom: 18,
-  }).addTo(map);
+  // Tile layer set by applyTheme() below
 
   let homeMarker = null;
   let markers = {};
@@ -301,13 +396,17 @@
     const speed = v.speed ? (v.speed * 3.6).toFixed(0) : '0';
     const time = v.timestamp ? new Date(v.timestamp * 1000).toLocaleTimeString('sv-SE', {hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '—';
     const stopName = config && config.homeStop ? config.homeStop.name : 'hemma';
+    const destHtml = v.destination
+      ? '<div style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.08)">🏁 <strong>' + v.destination + '</strong>' +
+        (v.dest_time ? ' <span style="color:#aaa">kl ' + v.dest_time + '</span>' : '') + '</div>'
+      : '';
     const etaHtml = v.eta_minutes != null
-      ? '<br>🏠 <strong style="color:#fbbf24">' + v.eta_minutes + ' min</strong> till ' + stopName + ' (' + v.eta_time + ')'
+      ? '<br>🚏 <strong style="color:#fbbf24">' + v.eta_minutes + ' min</strong> till ' + stopName + ' (' + v.eta_time + ')'
       : '';
     return '<div style="font-size:1.1rem;font-weight:700;margin-bottom:4px">' +
       '<span style="color:' + lineColor(v.line) + '">Linje ' + v.line + '</span></div>' +
       '<div style="color:#aaa">' + bearingArrow(v.bearing) + ' ' + statusText(v.status) +
-      '<br>🏎 ' + speed + ' km/h<br>🕐 ' + time + etaHtml + '</div>';
+      '<br>🏎 ' + speed + ' km/h<br>🕐 ' + time + etaHtml + '</div>' + destHtml;
   }
 
   function busIcon(line, eta) {
@@ -342,20 +441,35 @@
 
     // Update info panel
     const el = document.getElementById('line-statuses');
+    const toggleBtn = document.getElementById('line-toggle');
     const activeLines = config && config.lines ? config.lines : [];
     if (!vehicles.length) {
       el.innerHTML = '<div class="no-buses">Inga bussar ute just nu 😴</div>';
+      toggleBtn.style.display = 'none';
     } else {
-      // Show lines that have active buses, sorted
       const lineCounts = {};
       for (const v of vehicles) {
         lineCounts[v.line] = (lineCounts[v.line] || 0) + 1;
       }
-      const html = Object.keys(lineCounts).sort((a,b) => a.localeCompare(b, undefined, {numeric:true})).map(l => {
+      const sortedLines = Object.keys(lineCounts).sort((a,b) => a.localeCompare(b, undefined, {numeric:true}));
+      const html = sortedLines.map(l => {
         const n = lineCounts[l];
         return '<div class="line-status"><span class="line-badge" style="background:' + lineColor(l) + '">' + l + '</span><span class="line-count">' + n + ' buss' + (n > 1 ? 'ar' : '') + '</span></div>';
       }).join('');
       el.innerHTML = html || '<div class="no-buses">Inga bussar ute just nu 😴</div>';
+
+      // Collapse toggle
+      const MAX_VISIBLE = 3;
+      if (sortedLines.length > MAX_VISIBLE) {
+        const isCollapsed = el.classList.contains('collapsed');
+        toggleBtn.style.display = 'block';
+        toggleBtn.textContent = isCollapsed
+          ? '▼ Visa alla (' + sortedLines.length + ' linjer, ' + vehicles.length + ' bussar)'
+          : '▲ Minimera';
+      } else {
+        toggleBtn.style.display = 'none';
+        el.classList.remove('collapsed');
+      }
     }
     document.getElementById('update-time').textContent =
       'Uppdaterad ' + new Date().toLocaleTimeString('sv-SE', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
@@ -418,10 +532,6 @@
   const saveBtn = document.getElementById('save-btn');
 
   function renderStopResults() {
-    if (!stopSearchResults.length && stopSearch.value.length >= 2) {
-      stopList.innerHTML = '<div class="stop-item" style="color:#666;cursor:default">Inga resultat</div>';
-      return;
-    }
     if (!stopSearchResults.length) {
       stopList.innerHTML = '';
       return;
@@ -437,7 +547,8 @@
         if (!stop) return;
         selectedStop = { id: stop.id, siteId: stop.siteId, name: stop.name, lat: stop.lat, lon: stop.lon };
         stopSearch.value = stop.name;
-        renderStopResults(); // update selection highlight
+        stopSearchResults = [];
+        stopList.innerHTML = ''; // Hide results after selection
 
         // Fetch real lines from API
         linesGrid.innerHTML = '<div class="lines-loading">Hämtar linjer...</div>';
@@ -507,6 +618,9 @@
       renderLines(null);
     }
     checkSaveReady();
+    // Highlight current theme
+    document.getElementById('theme-dark').style.outline = currentTheme === 'dark' ? '2px solid #60a5fa' : 'none';
+    document.getElementById('theme-light').style.outline = currentTheme === 'light' ? '2px solid #3b82f6' : 'none';
     overlay.classList.add('visible');
   }
 
@@ -555,14 +669,78 @@
     }
     searchTimer = setTimeout(async () => {
       await searchStops(q);
-      renderStopResults();
+      if (!stopSearchResults.length && q.length >= 2) {
+        stopList.innerHTML = '<div class="stop-item" style="color:#666;cursor:default">Inga resultat</div>';
+      } else {
+        renderStopResults();
+      }
     }, 300);
   });
+
+  // ---- Add to Home Screen prompt ----
+  const a2hsOverlay = document.getElementById('a2hs-overlay');
+  const A2HS_KEY = 'bussigt_a2hs_dismissed';
+
+  function isStandalone() {
+    return window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+  }
+
+  function detectDevice() {
+    const ua = navigator.userAgent;
+    if (/iPad/.test(ua) || (/Macintosh/.test(ua) && 'ontouchend' in document)) return 'ipad';
+    if (/iPhone/.test(ua)) return 'iphone';
+    if (/Macintosh|Mac OS X/.test(ua) && /Safari/.test(ua) && !/Chrome/.test(ua)) return 'mac';
+    if (/Android/.test(ua)) return 'android';
+    return null;
+  }
+
+  function showA2HS() {
+    const device = detectDevice();
+    const stepsEl = document.getElementById('a2hs-steps');
+    let steps = '';
+
+    if (device === 'iphone' || device === 'ipad') {
+      steps = '<div class="a2hs-step"><span class="step-num">1</span><span>Tryck på <span class="a2hs-icon">⎋</span> <strong>Dela</strong>-knappen i Safari (nederkant)</span></div>' +
+        '<div class="a2hs-step"><span class="step-num">2</span><span>Scrolla ner och tryck <strong>"Lägg till på hemskärmen"</strong></span></div>' +
+        '<div class="a2hs-step"><span class="step-num">3</span><span>Tryck <strong>Lägg till</strong> — klart! 🎉</span></div>';
+    } else if (device === 'mac') {
+      steps = '<div class="a2hs-step"><span class="step-num">1</span><span>I Safari-menyn, klicka <strong>Arkiv → Lägg till i Dock</strong></span></div>' +
+        '<div class="a2hs-step"><span class="step-num">2</span><span>Klicka <strong>Lägg till</strong> — klart! 🎉</span></div>';
+    } else if (device === 'android') {
+      steps = '<div class="a2hs-step"><span class="step-num">1</span><span>Tryck på <strong>⋮ menyn</strong> (uppe till höger)</span></div>' +
+        '<div class="a2hs-step"><span class="step-num">2</span><span>Välj <strong>"Lägg till på startskärmen"</strong></span></div>' +
+        '<div class="a2hs-step"><span class="step-num">3</span><span>Tryck <strong>Lägg till</strong> — klart! 🎉</span></div>';
+    } else {
+      return; // Unknown device, don't show
+    }
+
+    stepsEl.innerHTML = steps;
+    a2hsOverlay.classList.add('visible');
+  }
+
+  function hideA2HS() {
+    a2hsOverlay.classList.remove('visible');
+    localStorage.setItem(A2HS_KEY, '1');
+  }
+
+  document.getElementById('a2hs-done').addEventListener('click', hideA2HS);
+  document.getElementById('a2hs-skip').addEventListener('click', hideA2HS);
+
+  function shouldShowA2HS() {
+    if (isStandalone()) return false;
+    if (localStorage.getItem(A2HS_KEY)) return false;
+    return detectDevice() !== null;
+  }
 
   saveBtn.addEventListener('click', function() {
     if (!selectedStop || selectedLines.size === 0) return;
     saveConfig();
     hideOnboarding();
+
+    if (shouldShowA2HS()) {
+      showA2HS();
+    }
+
     applyConfig();
   });
 
@@ -595,6 +773,47 @@
     startPolling();
   }
 
+  // ---- Zoom buttons ----
+  document.getElementById('zoom-in').addEventListener('click', function() { map.zoomIn(); });
+  document.getElementById('zoom-out').addEventListener('click', function() { map.zoomOut(); });
+
+  // ---- Line list collapse toggle ----
+  document.getElementById('line-toggle').addEventListener('click', function() {
+    const list = document.getElementById('line-statuses');
+    list.classList.toggle('collapsed');
+    const count = list.querySelectorAll('.line-status').length;
+    const totalBuses = Object.keys(markers).length;
+    this.textContent = list.classList.contains('collapsed')
+      ? '▼ Visa alla (' + count + ' linjer, ' + totalBuses + ' bussar)'
+      : '▲ Minimera';
+  });
+
+  // ---- Theme (dark/light) ----
+  let currentTheme = localStorage.getItem('bussigt_theme') || 'dark';
+  const darkTile = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+  const lightTile = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+  let tileLayer = null;
+
+  function applyTheme(theme, save) {
+    currentTheme = theme;
+    if (save) localStorage.setItem('bussigt_theme', theme);
+    document.body.classList.toggle('light', theme === 'light');
+    // Update meta theme-color
+    document.querySelector('meta[name="theme-color"]').content = theme === 'light' ? '#f5f5f5' : '#1a1a2e';
+    // Swap tiles
+    if (tileLayer) map.removeLayer(tileLayer);
+    tileLayer = L.tileLayer(theme === 'light' ? lightTile : darkTile, {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
+      subdomains: 'abcd', maxZoom: 18,
+    }).addTo(map);
+    // Highlight active theme button
+    document.getElementById('theme-dark').style.outline = theme === 'dark' ? '2px solid #60a5fa' : 'none';
+    document.getElementById('theme-light').style.outline = theme === 'light' ? '2px solid #3b82f6' : 'none';
+  }
+
+  document.getElementById('theme-dark').addEventListener('click', function() { applyTheme('dark', true); });
+  document.getElementById('theme-light').addEventListener('click', function() { applyTheme('light', true); });
+
   // ---- Settings button ----
   document.getElementById('settings-btn').addEventListener('click', showOnboarding);
 
@@ -620,10 +839,11 @@
     );
   });
 
+  // ---- Apply initial theme ----
+  applyTheme(currentTheme, false);
+
   // ---- Init ----
   clearTimeout(_initTimeout);
-  const loadingEl = document.getElementById('loading');
-  if (loadingEl) loadingEl.style.display = 'none';
 
   if (loadConfig()) {
     hideOnboarding();

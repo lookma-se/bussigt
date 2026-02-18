@@ -188,11 +188,68 @@ function skipField(&$data, &$offset, $len, $wireType) {
     }
 }
 
-// ---- Parse TripUpdates for ETAs ----
-function fetchEtas($data, $tripLineMap, $homeStops, $requestedLines) {
-    if ($data === false) return [];
+// ---- Stop name lookup (from SL API cache) ----
+function getStopNameMap() {
+    $cacheFile = sys_get_temp_dir() . '/bussigt_stops_v2.json';
+    if (!file_exists($cacheFile)) return [];
+    $allStops = json_decode(file_get_contents($cacheFile), true);
+    if (!$allStops) return [];
+    // Build GTFS stop_id → name map
+    $map = [];
+    foreach ($allStops as $s) {
+        foreach (($s['sa'] ?? []) as $sa) {
+            $padded = str_pad($sa, 6, '0', STR_PAD_LEFT);
+            $map["9022001{$padded}001"] = $s['n'];
+            $map["9022001{$padded}002"] = $s['n'];
+        }
+        // Also map by siteId
+        $padded = str_pad($s['s'], 6, '0', STR_PAD_LEFT);
+        $map["9022001{$padded}001"] = $s['n'];
+        $map["9022001{$padded}002"] = $s['n'];
+    }
+    return $map;
+}
 
-    $etas = []; // trip_id → arrival_time
+// ---- Parse a single StopTimeUpdate, return [stopId, arrTime, depTime] ----
+function parseStopTimeUpdate($stuData) {
+    $so = 0; $sl2 = strlen($stuData);
+    $stopId = ''; $arrTime = 0; $depTime = 0;
+    while ($so < $sl2) {
+        $stag = readVarint($stuData, $so, $sl2);
+        $sf = $stag >> 3; $sw = $stag & 7;
+        if ($sf === 4 && $sw === 2) {
+            $stopId = readBytes($stuData, $so, $sl2);
+        } elseif ($sf === 2 && $sw === 2) {
+            $aData = readBytes($stuData, $so, $sl2);
+            $ao = 0; $al = strlen($aData);
+            while ($ao < $al) {
+                $atag = readVarint($aData, $ao, $al);
+                $af = $atag >> 3; $aw = $atag & 7;
+                if ($af === 2 && $aw === 0) { $arrTime = readVarint($aData, $ao, $al); }
+                else { skipField($aData, $ao, $al, $aw); }
+            }
+        } elseif ($sf === 3 && $sw === 2) {
+            $dData = readBytes($stuData, $so, $sl2);
+            $do2 = 0; $dl = strlen($dData);
+            while ($do2 < $dl) {
+                $dtag = readVarint($dData, $do2, $dl);
+                $df = $dtag >> 3; $dw = $dtag & 7;
+                if ($df === 2 && $dw === 0) { $depTime = readVarint($dData, $do2, $dl); }
+                else { skipField($dData, $do2, $dl, $dw); }
+            }
+        } else {
+            skipField($stuData, $so, $sl2, $sw);
+        }
+    }
+    return [$stopId, $arrTime, $depTime];
+}
+
+// ---- Parse TripUpdates for ETAs + terminus info ----
+function fetchEtas($data, $tripLineMap, $homeStops, $requestedLines) {
+    if ($data === false) return [[], []];
+
+    $etas = []; // trip_id → arrival_time at home stop
+    $terminus = []; // trip_id → ['stop_id'=>..., 'arr_time'=>...]
     $offset = 0; $len = strlen($data);
 
     while ($offset < $len) {
@@ -200,14 +257,12 @@ function fetchEtas($data, $tripLineMap, $homeStops, $requestedLines) {
         $field = $tag >> 3; $wire = $tag & 7;
         if ($field === 2 && $wire === 2) {
             $entityData = readBytes($data, $offset, $len);
-            // Parse FeedEntity → TripUpdate (field 3)
             $eo = 0; $el = strlen($entityData);
             while ($eo < $el) {
                 $etag = readVarint($entityData, $eo, $el);
                 $ef = $etag >> 3; $ew = $etag & 7;
                 if ($ef === 3 && $ew === 2) {
                     $tuData = readBytes($entityData, $eo, $el);
-                    // Parse TripUpdate: trip (field 1), stop_time_update (field 2)
                     $to = 0; $tl = strlen($tuData);
                     $tripId = '';
                     $stopUpdates = [];
@@ -215,68 +270,46 @@ function fetchEtas($data, $tripLineMap, $homeStops, $requestedLines) {
                         $ttag = readVarint($tuData, $to, $tl);
                         $tf = $ttag >> 3; $tw = $ttag & 7;
                         if ($tf === 1 && $tw === 2) {
-                            // TripDescriptor
                             $tdData = readBytes($tuData, $to, $tl);
                             $tdo = 0; $tdl = strlen($tdData);
                             while ($tdo < $tdl) {
                                 $tdtag = readVarint($tdData, $tdo, $tdl);
                                 $tdf = $tdtag >> 3; $tdw = $tdtag & 7;
-                                if ($tdf === 1 && $tdw === 2) {
-                                    $tripId = readBytes($tdData, $tdo, $tdl);
-                                } else {
-                                    skipField($tdData, $tdo, $tdl, $tdw);
-                                }
+                                if ($tdf === 1 && $tdw === 2) { $tripId = readBytes($tdData, $tdo, $tdl); }
+                                else { skipField($tdData, $tdo, $tdl, $tdw); }
                             }
                         } elseif ($tf === 2 && $tw === 2) {
-                            // StopTimeUpdate
                             $stuData = readBytes($tuData, $to, $tl);
                             $stopUpdates[] = $stuData;
                         } else {
                             skipField($tuData, $to, $tl, $tw);
                         }
                     }
-                    // Check if trip matches requested lines
-                    $etaLine = ($tripId && isset($tripLineMap[$tripId])) ? $tripLineMap[$tripId] : null;
-                    if (!$etaLine && $routeId && strlen($routeId) > 12) $etaLine = ltrim(substr($routeId, 7, 5), '0');
+                    $etaLine = null;
+                    if ($tripId && isset($tripLineMap[$tripId])) {
+                        $mapVal = $tripLineMap[$tripId];
+                        $etaLine = (strpos($mapVal, '|') !== false) ? explode('|', $mapVal, 2)[0] : $mapVal;
+                    }
+                    if (!$etaLine && isset($routeId) && strlen($routeId) > 12) $etaLine = ltrim(substr($routeId, 7, 5), '0');
                     if ($etaLine && (!$requestedLines || in_array($etaLine, $requestedLines))) {
+                        $lastStopId = ''; $lastArrTime = 0;
                         foreach ($stopUpdates as $stuData) {
-                            $so = 0; $sl2 = strlen($stuData);
-                            $stopId = ''; $arrTime = 0; $depTime = 0;
-                            while ($so < $sl2) {
-                                $stag = readVarint($stuData, $so, $sl2);
-                                $sf = $stag >> 3; $sw = $stag & 7;
-                                if ($sf === 4 && $sw === 2) {
-                                    $stopId = readBytes($stuData, $so, $sl2);
-                                } elseif ($sf === 2 && $sw === 2) {
-                                    // StopTimeEvent (arrival)
-                                    $aData = readBytes($stuData, $so, $sl2);
-                                    $ao = 0; $al = strlen($aData);
-                                    while ($ao < $al) {
-                                        $atag = readVarint($aData, $ao, $al);
-                                        $af = $atag >> 3; $aw = $atag & 7;
-                                        if ($af === 2 && $aw === 0) {
-                                            $arrTime = readVarint($aData, $ao, $al);
-                                        } else { skipField($aData, $ao, $al, $aw); }
-                                    }
-                                } elseif ($sf === 3 && $sw === 2) {
-                                    // StopTimeEvent (departure)
-                                    $dData = readBytes($stuData, $so, $sl2);
-                                    $do2 = 0; $dl = strlen($dData);
-                                    while ($do2 < $dl) {
-                                        $dtag = readVarint($dData, $do2, $dl);
-                                        $df = $dtag >> 3; $dw = $dtag & 7;
-                                        if ($df === 2 && $dw === 0) {
-                                            $depTime = readVarint($dData, $do2, $dl);
-                                        } else { skipField($dData, $do2, $dl, $dw); }
-                                    }
-                                } else {
-                                    skipField($stuData, $so, $sl2, $sw);
-                                }
-                            }
+                            list($stopId, $arrTime, $depTime) = parseStopTimeUpdate($stuData);
+                            // Check home stop ETA
                             if (in_array($stopId, $homeStops)) {
                                 $t = $arrTime ?: $depTime;
                                 if ($t > 0) $etas[$tripId] = $t;
                             }
+                            // Track last stop (terminus) — the last update with arrival time
+                            $t = $arrTime ?: $depTime;
+                            if ($stopId && $t > 0) {
+                                $lastStopId = $stopId;
+                                $lastArrTime = $t;
+                            }
+                        }
+                        // Store terminus info
+                        if ($lastStopId && $lastArrTime > 0) {
+                            $terminus[$tripId] = ['stop_id' => $lastStopId, 'arr_time' => $lastArrTime];
                         }
                     }
                 } else {
@@ -287,11 +320,11 @@ function fetchEtas($data, $tripLineMap, $homeStops, $requestedLines) {
             skipField($data, $offset, $len, $wire);
         }
     }
-    return $etas;
+    return [$etas, $terminus];
 }
 
 // ---- Parse VehiclePositions ----
-function fetchVehicles($data, $tripLineMap, $etas, $requestedLines = null) {
+function fetchVehicles($data, $tripLineMap, $etas, $terminus, $stopNames, $requestedLines = null) {
     if ($data === false) return [];
 
     $vehicles = [];
@@ -358,9 +391,16 @@ function fetchVehicles($data, $tripLineMap, $etas, $requestedLines = null) {
                 } else skipField($vpData, $vo, $vl, $vw);
             }
 
-            $line = null;
-            if ($tripId && isset($tripLineMap[$tripId])) $line = $tripLineMap[$tripId];
-            elseif ($routeId && strlen($routeId) > 12) {
+            $line = null; $staticDest = null;
+            if ($tripId && isset($tripLineMap[$tripId])) {
+                $mapVal = $tripLineMap[$tripId];
+                if (strpos($mapVal, '|') !== false) {
+                    list($line, $staticDest) = explode('|', $mapVal, 2);
+                } else {
+                    $line = $mapVal;
+                }
+            }
+            if (!$line && $routeId && strlen($routeId) > 12) {
                 $line = ltrim(substr($routeId, 7, 5), '0');
             }
             if (!$line) continue;
@@ -387,6 +427,26 @@ function fetchVehicles($data, $tripLineMap, $etas, $requestedLines = null) {
                 }
             }
 
+            // Add destination info (from static GTFS + realtime terminus ETA)
+            if ($staticDest) {
+                $v['destination'] = $staticDest;
+            }
+            if ($tripId && isset($terminus[$tripId])) {
+                $term = $terminus[$tripId];
+                // Use terminus stop name from realtime if no static dest
+                if (!$staticDest) {
+                    $termName = $stopNames[$term['stop_id']] ?? null;
+                    if ($termName) $v['destination'] = $termName;
+                }
+                // Terminus ETA from realtime
+                $termArr = $term['arr_time'];
+                $termMins = round(($termArr - time()) / 60);
+                if ($termMins >= 0 && $termMins <= 180) {
+                    $v['dest_minutes'] = $termMins;
+                    $v['dest_time'] = date('H:i', $termArr);
+                }
+            }
+
             $vehicles[] = $v;
         } else {
             skipField($data, $offset, $len, $wire);
@@ -398,8 +458,9 @@ function fetchVehicles($data, $tripLineMap, $etas, $requestedLines = null) {
 // ---- Main ----
 $tuData = getCachedOrFetch($TU_URL, $TU_CACHE, $CACHE_TTL);
 $vpData = getCachedOrFetch($VP_URL, $VP_CACHE, $CACHE_TTL);
-$etas = fetchEtas($tuData, $tripLineMap, $HOME_STOPS, $requestedLines);
-$vehicles = fetchVehicles($vpData, $tripLineMap, $etas, $requestedLines);
+list($etas, $terminus) = fetchEtas($tuData, $tripLineMap, $HOME_STOPS, $requestedLines);
+$stopNames = !empty($terminus) ? getStopNameMap() : [];
+$vehicles = fetchVehicles($vpData, $tripLineMap, $etas, $terminus, $stopNames, $requestedLines);
 
 echo json_encode([
     'timestamp' => time(),
