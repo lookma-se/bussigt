@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Bussigt! — Se dina bussar live</title>
+  <meta name="description" content="Se var dina bussar är just nu. Välj hållplats och linjer — få realtidspositioner och ETA direkt i mobilen.">
+  <meta property="og:title" content="Bussigt! — Se dina bussar live">
+  <meta property="og:description" content="Realtidskarta för bussar i Nacka, Saltsjöbaden och Värmdö. Välj din hållplats och se bussarna på kartan.">
+  <meta property="og:url" content="https://lookma.se/bussigt/">
+  <meta property="og:type" content="website">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Bussigt!">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <meta name="theme-color" content="#1a1a2e">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #1a1a2e;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      overflow: hidden;
+    }
+    #map { width: 100vw; height: 100vh; height: 100dvh; }
+    /* Fix Leaflet tile grid lines on Retina/mobile */
+    .leaflet-tile { outline: none !important; border: none !important; image-rendering: auto; }
+    .leaflet-tile-container { will-change: transform; }
+    .leaflet-fade-anim .leaflet-tile { will-change: opacity, transform; }
+
+    .info-panel {
+      position: absolute; top: calc(12px + env(safe-area-inset-top, 0px)); left: 12px; z-index: 1000;
+      background: rgba(20, 20, 40, 0.88); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,0.08); border-radius: 12px;
+      padding: 14px 18px; box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+      color: #ccc; max-width: 260px;
+    }
+    .info-panel h1 { font-size: 1.05rem; font-weight: 700; color: #fff; margin-bottom: 2px; }
+    .info-panel .sub { font-size: 0.72rem; color: #888; margin-bottom: 10px; }
+    .line-status { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 0.82rem; }
+    .line-badge {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 38px; height: 22px; border-radius: 4px;
+      font-weight: 700; font-size: 0.78rem; color: #fff; padding: 0 6px;
+    }
+    .line-count { color: #e0e0e0; font-weight: 600; }
+    .update-time { font-size: 0.7rem; color: #666; margin-top: 8px; }
+    .no-buses { font-size: 0.75rem; color: #999; font-style: italic; }
+    .source-info {
+      font-size: 0.62rem; color: #555; margin-top: 6px;
+      border-top: 1px solid rgba(255,255,255,0.05); padding-top: 6px;
+    }
+    .source-info a { color: #666; text-decoration: none; }
+    .source-info a:hover { color: #999; }
+
+    .action-btn {
+      position: absolute; z-index: 1000;
+      width: 44px; height: 44px; border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(20, 20, 40, 0.85); backdrop-filter: blur(12px);
+      color: #ccc; font-size: 1.3rem; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+      transition: background 0.2s, color 0.2s;
+    }
+    .action-btn:hover { background: rgba(40,40,70,0.95); color: #fff; }
+    .action-btn.active { color: #60a5fa; }
+    #locate-btn { bottom: calc(16px + env(safe-area-inset-bottom, 0px)); right: 16px; }
+    #settings-btn { bottom: calc(16px + env(safe-area-inset-bottom, 0px)); left: 16px; }
+
+    /* Onboarding overlay */
+    .overlay {
+      position: fixed; inset: 0; z-index: 2000;
+      background: rgba(10, 10, 25, 0.92); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; pointer-events: none; transition: opacity 0.3s ease;
+    }
+    .overlay.visible { opacity: 1; pointer-events: auto; }
+    .overlay-card {
+      background: rgba(25, 25, 50, 0.95); border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 16px; padding: 28px 24px; max-width: 380px; width: 90%;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.5); color: #e0e0e0;
+      max-height: 90vh; overflow-y: auto;
+    }
+    .overlay-card h2 { font-size: 1.3rem; color: #fff; margin-bottom: 4px; text-align: center; }
+    .overlay-card .tagline { font-size: 0.8rem; color: #888; text-align: center; margin-bottom: 20px; }
+    .overlay-card label { display: block; font-size: 0.82rem; color: #aaa; margin-bottom: 6px; font-weight: 600; }
+    .overlay-card .section { margin-bottom: 18px; }
+
+    .stop-search {
+      width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);
+      background: rgba(15,15,35,0.8); color: #e0e0e0; font-size: 0.9rem;
+      outline: none; transition: border-color 0.2s;
+    }
+    .stop-search:focus { border-color: rgba(96,165,250,0.5); }
+    .stop-list {
+      max-height: 180px; overflow-y: auto; margin-top: 6px;
+      border-radius: 8px; border: 1px solid rgba(255,255,255,0.06);
+    }
+    .stop-item {
+      padding: 10px 12px; cursor: pointer; font-size: 0.82rem; color: #ccc;
+      border-bottom: 1px solid rgba(255,255,255,0.04); transition: background 0.15s;
+    }
+    .stop-item:last-child { border-bottom: none; }
+    .stop-item:hover { background: rgba(96,165,250,0.1); }
+    .stop-item.selected { background: rgba(96,165,250,0.2); color: #60a5fa; font-weight: 600; }
+
+    .lines-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 6px;
+    }
+    .line-check {
+      display: flex; align-items: center; gap: 6px; padding: 8px 10px;
+      border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(15,15,35,0.6); cursor: pointer; transition: all 0.15s;
+      font-size: 0.82rem; color: #aaa;
+    }
+    .line-check:hover { border-color: rgba(255,255,255,0.15); }
+    .line-check.checked { border-color: rgba(96,165,250,0.4); background: rgba(96,165,250,0.12); color: #60a5fa; }
+    .line-check input { display: none; }
+
+    .save-btn {
+      width: 100%; padding: 12px; border: none; border-radius: 10px;
+      background: linear-gradient(135deg, #3b82f6, #2563eb); color: #fff;
+      font-size: 0.95rem; font-weight: 700; cursor: pointer;
+      transition: transform 0.1s, box-shadow 0.2s; margin-top: 8px;
+    }
+    .save-btn:hover { box-shadow: 0 4px 16px rgba(59,130,246,0.3); }
+    .save-btn:active { transform: scale(0.98); }
+    .save-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .lines-loading { color: #666; font-size: 0.8rem; grid-column: 1/-1; text-align: center; padding: 8px; }
+
+    .leaflet-popup-content-wrapper {
+      background: rgba(20, 20, 40, 0.95) !important; color: #e0e0e0 !important;
+      border-radius: 10px !important; border: 1px solid rgba(255,255,255,0.1) !important;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5) !important;
+    }
+    .leaflet-popup-tip { background: rgba(20, 20, 40, 0.95) !important; }
+    .leaflet-popup-content { margin: 10px 12px !important; font-size: 0.82rem !important; line-height: 1.5 !important; }
+    .leaflet-popup-close-button { color: #888 !important; }
+    .leaflet-control-attribution { background: rgba(20, 20, 40, 0.7) !important; color: #666 !important; font-size: 0.6rem !important; padding-right: env(safe-area-inset-right, 4px) !important; padding-bottom: env(safe-area-inset-bottom, 0px) !important; }
+    .leaflet-control-attribution a { color: #888 !important; }
+    .leaflet-control-zoom a { background: rgba(20, 20, 40, 0.85) !important; color: #ccc !important; border-color: rgba(255,255,255,0.08) !important; }
+    .leaflet-control-zoom a:hover { background: rgba(40,40,70,0.95) !important; color: #fff !important; }
+
+    .stop-list::-webkit-scrollbar, .overlay-card::-webkit-scrollbar { width: 4px; }
+    .stop-list::-webkit-scrollbar-track, .overlay-card::-webkit-scrollbar-track { background: transparent; }
+    .stop-list::-webkit-scrollbar-thumb, .overlay-card::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+  </style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div class="info-panel">
+  <h1 id="app-title">🚌 Bussigt!</h1>
+  <div class="sub" id="app-sub">Realtidsbussar</div>
+  <div id="line-statuses"><div class="no-buses">Laddar...</div></div>
+  <div class="update-time" id="update-time"></div>
+  <div class="source-info">Data: <a href="https://www.trafiklab.se" target="_blank">Trafiklab</a> GTFS Regional · <a href="https://lookma.se">Lookma</a></div>
+</div>
+
+<button class="action-btn" id="settings-btn" title="Inställningar">⚙️</button>
+<button class="action-btn" id="locate-btn" title="Visa min position">◉</button>
+
+<!-- Onboarding overlay -->
+<div class="overlay" id="onboarding">
+  <div class="overlay-card">
+    <h2>🚌 Bussigt!</h2>
+    <p class="tagline">Välj din hållplats och dina linjer</p>
+
+    <div class="section">
+      <label>📍 Hemmahållplats</label>
+      <input type="text" class="stop-search" id="stop-search" placeholder="Sök hållplats..." autocomplete="off">
+      <div class="stop-list" id="stop-list"></div>
+    </div>
+
+    <div class="section">
+      <label id="lines-label">🚍 Busslinjer att bevaka</label>
+      <div class="lines-grid" id="lines-grid"></div>
+      <div style="display:flex;gap:6px;margin-top:10px">
+        <input type="text" id="add-line-input" class="stop-search" placeholder="Lägg till linje (t.ex. 449)" style="flex:1;padding:8px 10px;font-size:0.82rem" inputmode="numeric">
+        <button id="add-line-btn" style="padding:8px 14px;border-radius:8px;border:1px solid rgba(96,165,250,0.4);background:rgba(96,165,250,0.15);color:#60a5fa;font-weight:700;font-size:0.82rem;cursor:pointer">+ Lägg till</button>
+      </div>
+      <div style="font-size:0.68rem;color:#666;margin-top:4px">Linjer som inte trafikerar just nu kan läggas till manuellt</div>
+    </div>
+
+    <button class="save-btn" id="save-btn" disabled>Spara & starta</button>
+  </div>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  // ---- Line colors (known + generated palette for unknowns) ----
+  const LINE_COLORS = {
+    '401':'#6366f1','402':'#8b5cf6','409':'#3182ce','414':'#0891b2',
+    '420':'#059669','422':'#65a30d','443':'#d97706','449':'#e53e3e',
+    '469':'#0d9488','471':'#db2777','474':'#9333ea',
+  };
+  const PALETTE = ['#6366f1','#3182ce','#059669','#d97706','#e53e3e','#db2777','#9333ea','#0891b2','#65a30d','#0d9488','#8b5cf6'];
+  let paletteIdx = 0;
+
+  function lineColor(num) {
+    if (!LINE_COLORS[num]) {
+      LINE_COLORS[num] = PALETTE[paletteIdx % PALETTE.length];
+      paletteIdx++;
+    }
+    return LINE_COLORS[num];
+  }
+
+  const DEFAULT_CENTER = [59.31, 18.17];
+  const DEFAULT_ZOOM = 13;
+  const POLL_MS = 5000;
+  const LS_KEY = 'bussigt_config';
+
+  // ---- State ----
+  let config = null; // { homeStop: {id, siteId, name, lat, lon}, lines: ['449','409',...] }
+  let selectedStop = null;
+  let selectedLines = new Set();
+  let stopSearchResults = []; // from API
+  let searchTimer = null;
+
+  // ---- localStorage ----
+  function loadConfig() {
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (raw) { config = JSON.parse(raw); return true; }
+    } catch(e) {}
+    return false;
+  }
+
+  function saveConfig() {
+    config = {
+      homeStop: selectedStop,
+      lines: Array.from(selectedLines)
+    };
+    localStorage.setItem(LS_KEY, JSON.stringify(config));
+  }
+
+  // ---- Persist map view (zoom + center) ----
+  function saveMapView() {
+    const c = map.getCenter();
+    localStorage.setItem('bussigt_view', JSON.stringify({ lat: c.lat, lng: c.lng, zoom: map.getZoom() }));
+  }
+  function loadMapView() {
+    try {
+      const raw = localStorage.getItem('bussigt_view');
+      if (raw) return JSON.parse(raw);
+    } catch(e) {}
+    return null;
+  }
+  map.on('moveend', saveMapView);
+  map.on('zoomend', saveMapView);
+
+  // ---- Map setup ----
+  const map = L.map('map', { center: DEFAULT_CENTER, zoom: DEFAULT_ZOOM, zoomControl: true });
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
+    subdomains: 'abcd', maxZoom: 18,
+  }).addTo(map);
+
+  let homeMarker = null;
+  let markers = {};
+  let pollTimer = null;
+
+  function setHomeMarker(lat, lon, name) {
+    if (homeMarker) map.removeLayer(homeMarker);
+    homeMarker = L.marker([lat, lon], {
+      icon: L.divIcon({
+        html: '<div style="font-size:24px;text-shadow:0 2px 6px rgba(0,0,0,0.5)">🚏</div>',
+        className: '', iconSize: [28, 28], iconAnchor: [14, 14],
+      })
+    }).addTo(map).bindPopup('<strong>🚏 ' + name + '</strong>');
+  }
+
+  // ---- Bus rendering ----
+  function statusText(s) {
+    return s === 'STOPPED_AT' ? 'Vid hållplats' : s === 'INCOMING_AT' ? 'Anländer' : 'På väg';
+  }
+
+  function bearingArrow(b) {
+    if (b == null) return '●';
+    return ['↑','↗','→','↘','↓','↙','←','↖'][Math.round(b / 45) % 8];
+  }
+
+  function popup(v) {
+    const speed = v.speed ? (v.speed * 3.6).toFixed(0) : '0';
+    const time = v.timestamp ? new Date(v.timestamp * 1000).toLocaleTimeString('sv-SE', {hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '—';
+    const stopName = config && config.homeStop ? config.homeStop.name : 'hemma';
+    const etaHtml = v.eta_minutes != null
+      ? '<br>🏠 <strong style="color:#fbbf24">' + v.eta_minutes + ' min</strong> till ' + stopName + ' (' + v.eta_time + ')'
+      : '';
+    return '<div style="font-size:1.1rem;font-weight:700;margin-bottom:4px">' +
+      '<span style="color:' + lineColor(v.line) + '">Linje ' + v.line + '</span></div>' +
+      '<div style="color:#aaa">' + bearingArrow(v.bearing) + ' ' + statusText(v.status) +
+      '<br>🏎 ' + speed + ' km/h<br>🕐 ' + time + etaHtml + '</div>';
+  }
+
+  function busIcon(line, eta) {
+    const c = lineColor(line);
+    const etaLabel = eta != null ? '<div style="position:absolute;top:-18px;left:50%;transform:translateX(-50%);' +
+      'background:rgba(20,20,40,0.9);color:#fbbf24;font-size:10px;font-weight:700;font-family:system-ui;' +
+      'padding:1px 5px;border-radius:3px;white-space:nowrap;border:1px solid rgba(251,191,36,0.3);' +
+      'text-shadow:0 1px 2px rgba(0,0,0,0.5)">' + eta + ' min</div>' : '';
+    return L.divIcon({
+      html: '<div style="position:relative">' + etaLabel + '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">' +
+        '<circle cx="16" cy="16" r="14" fill="' + c + '" stroke="#fff" stroke-width="2" opacity="0.95"/>' +
+        '<text x="16" y="20.5" text-anchor="middle" fill="#fff" font-size="' + (line.length > 3 ? '9' : '12') + '" font-weight="700" font-family="system-ui">' + line + '</text></svg></div>',
+      className: '', iconSize: [32,32], iconAnchor: [16,16], popupAnchor: [0,-18],
+    });
+  }
+
+  function updateBuses(vehicles) {
+    const active = new Set();
+    for (const v of vehicles) {
+      active.add(v.id);
+      const pos = [v.lat, v.lon];
+      const eta = v.eta_minutes != null ? v.eta_minutes : null;
+      if (markers[v.id]) {
+        markers[v.id].setLatLng(pos).setIcon(busIcon(v.line, eta)).setPopupContent(popup(v));
+      } else {
+        markers[v.id] = L.marker(pos, {icon: busIcon(v.line, eta)}).bindPopup(popup(v)).addTo(map);
+      }
+    }
+    for (const id of Object.keys(markers)) {
+      if (!active.has(id)) { map.removeLayer(markers[id]); delete markers[id]; }
+    }
+
+    // Update info panel
+    const el = document.getElementById('line-statuses');
+    const activeLines = config && config.lines ? config.lines : [];
+    if (!vehicles.length) {
+      el.innerHTML = '<div class="no-buses">Inga bussar ute just nu 😴</div>';
+    } else {
+      // Show lines that have active buses, sorted
+      const lineCounts = {};
+      for (const v of vehicles) {
+        lineCounts[v.line] = (lineCounts[v.line] || 0) + 1;
+      }
+      const html = Object.keys(lineCounts).sort((a,b) => a.localeCompare(b, undefined, {numeric:true})).map(l => {
+        const n = lineCounts[l];
+        return '<div class="line-status"><span class="line-badge" style="background:' + lineColor(l) + '">' + l + '</span><span class="line-count">' + n + ' buss' + (n > 1 ? 'ar' : '') + '</span></div>';
+      }).join('');
+      el.innerHTML = html || '<div class="no-buses">Inga bussar ute just nu 😴</div>';
+    }
+    document.getElementById('update-time').textContent =
+      'Uppdaterad ' + new Date().toLocaleTimeString('sv-SE', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  }
+
+  async function fetchData() {
+    try {
+      const lines = config && config.lines.length ? config.lines.join(',') : '';
+      if (!lines) return;
+      const stop = config && config.homeStop ? config.homeStop.id : '';
+      let url = 'api.php?lines=' + encodeURIComponent(lines);
+      if (stop) url += '&stop=' + encodeURIComponent(stop);
+      const r = await fetch(url);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+      if (d.error) throw new Error(d.error);
+      updateBuses(d.vehicles || []);
+    } catch (e) {
+      console.error('Fetch failed:', e);
+      document.getElementById('update-time').textContent = 'Fel: ' + e.message;
+    }
+  }
+
+  function startPolling() {
+    if (pollTimer) clearInterval(pollTimer);
+    fetchData();
+    pollTimer = setInterval(fetchData, POLL_MS);
+  }
+
+  // ---- Stop search (async API) ----
+  async function searchStops(query) {
+    if (query.length < 2) { stopSearchResults = []; return; }
+    try {
+      const r = await fetch('api.php?action=search&q=' + encodeURIComponent(query));
+      const d = await r.json();
+      stopSearchResults = d.stops || [];
+    } catch(e) {
+      console.error('Stop search failed:', e);
+      stopSearchResults = [];
+    }
+  }
+
+  // ---- Fetch lines at a stop (async API) ----
+  async function fetchLinesForStop(siteId) {
+    try {
+      const r = await fetch('api.php?action=lines&siteId=' + encodeURIComponent(siteId));
+      const d = await r.json();
+      return (d.lines || []).filter(l => l.transport === 'BUS').map(l => l.num);
+    } catch(e) {
+      console.error('Lines fetch failed:', e);
+      return [];
+    }
+  }
+
+  // ---- Onboarding ----
+  const overlay = document.getElementById('onboarding');
+  const stopSearch = document.getElementById('stop-search');
+  const stopList = document.getElementById('stop-list');
+  const linesGrid = document.getElementById('lines-grid');
+  const saveBtn = document.getElementById('save-btn');
+
+  function renderStopResults() {
+    if (!stopSearchResults.length && stopSearch.value.length >= 2) {
+      stopList.innerHTML = '<div class="stop-item" style="color:#666;cursor:default">Inga resultat</div>';
+      return;
+    }
+    if (!stopSearchResults.length) {
+      stopList.innerHTML = '';
+      return;
+    }
+    stopList.innerHTML = stopSearchResults.map(s =>
+      '<div class="stop-item' + (selectedStop && selectedStop.siteId === s.siteId ? ' selected' : '') +
+      '" data-idx="' + stopSearchResults.indexOf(s) + '">' + s.name + '</div>'
+    ).join('');
+    stopList.querySelectorAll('.stop-item').forEach(el => {
+      el.addEventListener('click', async function() {
+        const idx = parseInt(this.dataset.idx);
+        const stop = stopSearchResults[idx];
+        if (!stop) return;
+        selectedStop = { id: stop.id, siteId: stop.siteId, name: stop.name, lat: stop.lat, lon: stop.lon };
+        stopSearch.value = stop.name;
+        renderStopResults(); // update selection highlight
+
+        // Fetch real lines from API
+        linesGrid.innerHTML = '<div class="lines-loading">Hämtar linjer...</div>';
+        const lines = await fetchLinesForStop(stop.siteId);
+        // Select ALL by default
+        selectedLines = new Set(lines);
+        renderLines(lines);
+        checkSaveReady();
+      });
+    });
+  }
+
+  function renderLines(lines) {
+    const label = document.getElementById('lines-label');
+    if (!lines || !lines.length) {
+      if (selectedStop) {
+        label.textContent = '🚍 Inga busslinjer hittades';
+        linesGrid.innerHTML = '<div style="color:#666;font-size:0.8rem;grid-column:1/-1">Inga avgångar just nu — prova igen senare</div>';
+      } else {
+        label.textContent = '🚍 Välj hållplats först ↑';
+        linesGrid.innerHTML = '<div style="color:#666;font-size:0.8rem;grid-column:1/-1">Sök och välj en hållplats ovan</div>';
+      }
+      return;
+    }
+    label.textContent = '🚍 Linjer vid ' + (selectedStop ? selectedStop.name : '');
+    linesGrid.innerHTML = lines.map(num =>
+      '<div class="line-check' + (selectedLines.has(num) ? ' checked' : '') + '" data-line="' + num + '">' +
+      '<span style="color:' + lineColor(num) + ';font-weight:700">' + num + '</span></div>'
+    ).join('');
+    linesGrid.querySelectorAll('.line-check').forEach(el => {
+      el.addEventListener('click', function() {
+        const line = this.dataset.line;
+        if (selectedLines.has(line)) {
+          selectedLines.delete(line);
+          this.classList.remove('checked');
+        } else {
+          selectedLines.add(line);
+          this.classList.add('checked');
+        }
+        checkSaveReady();
+      });
+    });
+  }
+
+  function checkSaveReady() {
+    saveBtn.disabled = !(selectedStop && selectedLines.size > 0);
+  }
+
+  function showOnboarding() {
+    if (config) {
+      selectedStop = config.homeStop || null;
+      selectedLines = new Set(config.lines || []);
+    }
+    stopSearch.value = selectedStop ? selectedStop.name : '';
+    stopSearchResults = [];
+    if (selectedStop) {
+      // Show current selection, fetch lines
+      renderStopResults();
+      fetchLinesForStop(selectedStop.siteId).then(lines => {
+        if (!lines.length) lines = config.lines || [];
+        // Keep user's current selection but show available lines
+        renderLines(lines);
+        checkSaveReady();
+      });
+    } else {
+      renderStopResults();
+      renderLines(null);
+    }
+    checkSaveReady();
+    overlay.classList.add('visible');
+  }
+
+  function hideOnboarding() {
+    overlay.classList.remove('visible');
+  }
+
+  // ---- Manual line add ----
+  const addLineInput = document.getElementById('add-line-input');
+  const addLineBtn = document.getElementById('add-line-btn');
+
+  function addManualLine() {
+    const num = addLineInput.value.trim();
+    if (!num || selectedLines.has(num)) { addLineInput.value = ''; return; }
+    selectedLines.add(num);
+    addLineInput.value = '';
+    // Re-render lines grid with the new line included
+    const currentNums = Array.from(linesGrid.querySelectorAll('.line-check')).map(el => el.dataset.line);
+    if (!currentNums.includes(num)) {
+      // Add it to the grid
+      const div = document.createElement('div');
+      div.className = 'line-check checked';
+      div.dataset.line = num;
+      div.innerHTML = '<span style="color:' + lineColor(num) + ';font-weight:700">' + num + '</span>';
+      div.addEventListener('click', function() {
+        if (selectedLines.has(num)) { selectedLines.delete(num); this.classList.remove('checked'); }
+        else { selectedLines.add(num); this.classList.add('checked'); }
+        checkSaveReady();
+      });
+      linesGrid.appendChild(div);
+    }
+    checkSaveReady();
+  }
+
+  addLineBtn.addEventListener('click', addManualLine);
+  addLineInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); addManualLine(); } });
+
+  // Debounced search
+  stopSearch.addEventListener('input', function() {
+    clearTimeout(searchTimer);
+    const q = this.value.trim();
+    if (q.length < 2) {
+      stopSearchResults = [];
+      renderStopResults();
+      return;
+    }
+    searchTimer = setTimeout(async () => {
+      await searchStops(q);
+      renderStopResults();
+    }, 300);
+  });
+
+  saveBtn.addEventListener('click', function() {
+    if (!selectedStop || selectedLines.size === 0) return;
+    saveConfig();
+    hideOnboarding();
+    applyConfig();
+  });
+
+  // ---- Apply config to map ----
+  function applyConfig() {
+    if (!config) return;
+    const hs = config.homeStop;
+    const lines = config.lines;
+
+    // Title
+    document.getElementById('app-sub').textContent = lines.join(', ') + ' i realtid';
+
+    // Home marker at the actual stop coordinates
+    if (hs && hs.lat && hs.lon) setHomeMarker(hs.lat, hs.lon, hs.name);
+
+    // Center map: saved view > home stop > default
+    const savedView = loadMapView();
+    if (savedView && !userMarker) {
+      map.setView([savedView.lat, savedView.lng], savedView.zoom);
+    } else if (hs && hs.lat && !userMarker) {
+      map.setView([hs.lat, hs.lon], DEFAULT_ZOOM);
+    }
+
+    // Clear old bus markers
+    for (const id of Object.keys(markers)) { map.removeLayer(markers[id]); delete markers[id]; }
+
+    startPolling();
+  }
+
+  // ---- Settings button ----
+  document.getElementById('settings-btn').addEventListener('click', showOnboarding);
+
+  // ---- Geolocation ----
+  let watchId = null, userMarker = null;
+  document.getElementById('locate-btn').addEventListener('click', function() {
+    if (watchId !== null) {
+      navigator.geolocation.clearWatch(watchId); watchId = null;
+      if (userMarker) { map.removeLayer(userMarker); userMarker = null; }
+      this.classList.remove('active'); return;
+    }
+    this.classList.add('active');
+    watchId = navigator.geolocation.watchPosition(
+      p => {
+        const ll = [p.coords.latitude, p.coords.longitude];
+        if (!userMarker) {
+          userMarker = L.circleMarker(ll, {radius:7,fillColor:'#60a5fa',fillOpacity:1,color:'#fff',weight:2}).addTo(map).bindPopup('Du är här');
+          map.setView(ll, 15);
+        } else userMarker.setLatLng(ll);
+      },
+      () => { document.getElementById('locate-btn').classList.remove('active'); watchId = null; },
+      {enableHighAccuracy: true}
+    );
+  });
+
+  // ---- Init ----
+  if (loadConfig()) {
+    applyConfig();
+  } else {
+    selectedLines = new Set();
+    showOnboarding();
+  }
+
+})();
+</script>
+</body>
+</html>
