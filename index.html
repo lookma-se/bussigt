@@ -14,8 +14,8 @@
   <meta name="apple-mobile-web-app-title" content="Bussigt!">
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <meta name="theme-color" content="#1a1a2e">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="leaflet.css" />
+  <script src="leaflet.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -77,6 +77,7 @@
       opacity: 0; pointer-events: none; transition: opacity 0.3s ease;
     }
     .overlay.visible { opacity: 1; pointer-events: auto; }
+    .overlay.initial { opacity: 1; pointer-events: auto; }
     .overlay-card {
       background: rgba(25, 25, 50, 0.95); border: 1px solid rgba(255,255,255,0.1);
       border-radius: 16px; padding: 28px 24px; max-width: 380px; width: 90%;
@@ -151,12 +152,16 @@
 </head>
 <body>
 
+<div id="loading" style="position:fixed;inset:0;z-index:3000;background:#1a1a2e;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;color:#ccc;font-family:system-ui">
+  <div style="font-size:3rem">🚌</div>
+  <div style="font-size:1rem;opacity:0.7">Laddar Bussigt!...</div>
+</div>
 <div id="map"></div>
 
 <div class="info-panel">
   <h1 id="app-title">🚌 Bussigt!</h1>
   <div class="sub" id="app-sub">Realtidsbussar</div>
-  <div id="line-statuses"><div class="no-buses">Laddar...</div></div>
+  <div id="line-statuses"><div class="no-buses">Välj hållplats via ⚙️</div></div>
   <div class="update-time" id="update-time"></div>
   <div class="source-info">Data: <a href="https://www.trafiklab.se" target="_blank">Trafiklab</a> GTFS Regional · <a href="https://lookma.se">Lookma</a></div>
 </div>
@@ -164,8 +169,8 @@
 <button class="action-btn" id="settings-btn" title="Inställningar">⚙️</button>
 <button class="action-btn" id="locate-btn" title="Visa min position">◉</button>
 
-<!-- Onboarding overlay -->
-<div class="overlay" id="onboarding">
+<!-- Onboarding overlay — starts visible, JS hides it if config exists -->
+<div class="overlay visible" id="onboarding">
   <div class="overlay-card">
     <h2>🚌 Bussigt!</h2>
     <p class="tagline">Välj din hållplats och dina linjer</p>
@@ -193,6 +198,12 @@
 <script>
 (function() {
   'use strict';
+
+  // Fallback: if app doesn't init within 10s, show error
+  var _initTimeout = setTimeout(function() {
+    var el = document.getElementById('loading');
+    if (el) el.innerHTML = '<div style="font-size:3rem">🚌</div><div style="color:#e53e3e">Kunde inte ladda appen.<br>Prova ladda om sidan.</div>';
+  }, 10000);
 
   // ---- Line colors (known + generated palette for unknowns) ----
   const LINE_COLORS = {
@@ -240,6 +251,9 @@
     localStorage.setItem(LS_KEY, JSON.stringify(config));
   }
 
+  // ---- Map setup ----
+  const map = L.map('map', { center: DEFAULT_CENTER, zoom: DEFAULT_ZOOM, zoomControl: true });
+
   // ---- Persist map view (zoom + center) ----
   function saveMapView() {
     const c = map.getCenter();
@@ -254,9 +268,6 @@
   }
   map.on('moveend', saveMapView);
   map.on('zoomend', saveMapView);
-
-  // ---- Map setup ----
-  const map = L.map('map', { center: DEFAULT_CENTER, zoom: DEFAULT_ZOOM, zoomControl: true });
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
     subdomains: 'abcd', maxZoom: 18,
@@ -556,6 +567,7 @@
   });
 
   // ---- Apply config to map ----
+  let _isInitialLoad = true;
   function applyConfig() {
     if (!config) return;
     const hs = config.homeStop;
@@ -567,12 +579,14 @@
     // Home marker at the actual stop coordinates
     if (hs && hs.lat && hs.lon) setHomeMarker(hs.lat, hs.lon, hs.name);
 
-    // Center map: saved view > home stop > default
-    const savedView = loadMapView();
-    if (savedView && !userMarker) {
-      map.setView([savedView.lat, savedView.lng], savedView.zoom);
-    } else if (hs && hs.lat && !userMarker) {
-      map.setView([hs.lat, hs.lon], DEFAULT_ZOOM);
+    // Center map: on initial load use saved view, otherwise center on home stop
+    if (_isInitialLoad) {
+      const savedView = loadMapView();
+      if (savedView) map.setView([savedView.lat, savedView.lng], savedView.zoom);
+      else if (hs && hs.lat && !userMarker) map.setView([hs.lat, hs.lon], DEFAULT_ZOOM);
+      _isInitialLoad = false;
+    } else {
+      if (hs && hs.lat) map.setView([hs.lat, hs.lon], DEFAULT_ZOOM);
     }
 
     // Clear old bus markers
@@ -607,7 +621,12 @@
   });
 
   // ---- Init ----
+  clearTimeout(_initTimeout);
+  const loadingEl = document.getElementById('loading');
+  if (loadingEl) loadingEl.style.display = 'none';
+
   if (loadConfig()) {
+    hideOnboarding();
     applyConfig();
   } else {
     selectedLines = new Set();
